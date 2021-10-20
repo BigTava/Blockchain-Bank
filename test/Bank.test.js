@@ -3,6 +3,9 @@ const { assert } = require('chai');
 const Token = artifacts.require("Token");
 const Bank = artifacts.require("Bank");
 
+const utils = require("./helpers/utils");
+const time = require("./helpers/time");
+
 require('chai')
     .use(require('chai-as-promised'))
     .should()
@@ -19,10 +22,12 @@ contract('StakingPool', ([owner, user1, user2]) => {
     let balanceUser1 = tokens('1000')
     let balanceUser2 = tokens('4000')
 
+    let t0, period
+
     before(async () => {
         token = await Token.new()
         bank  = await Bank.new(token.address, timePeriod, rewardPool)
-        
+
         // Transfer Reward Pool of XYZ tokens to the bank smart contract
         await token.transfer(bank.address, rewardPool)
 
@@ -50,7 +55,7 @@ contract('StakingPool', ([owner, user1, user2]) => {
     })
     
     describe('Staking Tokens', async () => {
-        it('rewards investor1 for staking xyz tokens', async () => {
+        it('user should be able to stake tokens at period 1', async () => {
             let result
 
             // Check user1 balance before staking
@@ -68,7 +73,24 @@ contract('StakingPool', ([owner, user1, user2]) => {
             // Check balance of bank
             result = await token.balanceOf(bank.address)
             assert.equal(result.toString(), parseInt(rewardPool) + parseInt(balanceUser1), 'bank wallet balance correct after user1 staking')
+        })
+
+        it('user should not be able to stake tokens at period 2', async () => {
+            await time.increase(time.duration.minutes(1));
+
+            let period = await bank.getCurrentPeriod()
+            console.log(period.toString())
+
+            await token.approve(bank.address, balanceUser1, { from: user1 }) 
+            await utils.shouldThrow(bank.stakeTokens(balanceUser1, { from: user1}));
+
+            // Check staking result
+            result = await token.balanceOf(user1)
+            assert.equal(result.toString(), balanceUser1, 'user1 XYZ wallet balance is the same')
             
+            // Check balance of bank
+            result = await token.balanceOf(bank.address)
+            assert.equal(result.toString(), parseInt(rewardPool), 'bank wallet balance is the same')
         })
     })
 })

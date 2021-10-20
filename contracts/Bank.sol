@@ -3,16 +3,19 @@ pragma solidity ^0.8.0;
 
 import "./Token.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 
 contract Bank is Ownable{
 
+    using SafeMath for uint256;
+
     Token public token;
     address private _owner;
-    uint public timePeriod;
+    uint public timePeriodMinutes;
     uint public t0;
     uint public rewardPool;
     address[] public usersAddresses;
-
+    
     struct user {
         uint p1;
         uint p2;
@@ -22,14 +25,14 @@ contract Bank is Ownable{
     }
 
     mapping(address => user) users;
-    mapping(uint => uint) public totalStaked;
+    mapping(uint => uint) totalStaked; // staking amount at each period
 
     event NewStaker(address stakerAddress, uint amount);
 
-    constructor(Token _token, uint _timePeriod, uint _rewardPool) public {
+    constructor(Token _token, uint _timePeriodMinutes, uint _rewardPool) public {
         _owner      = msg.sender;
         token       = _token;
-        timePeriod  = 0 minutes + _timePeriod;
+        timePeriodMinutes  = _timePeriodMinutes.mul(60);
         t0          = block.timestamp;
         rewardPool  = _rewardPool;
     }
@@ -71,7 +74,7 @@ contract Bank is Ownable{
     
         // update staking balance
         users[msg.sender].stakingBalance = _amount;
-        totalStaked[getCurrentPeriod()] += _amount;
+        totalStaked[1] = totalStaked[1].add(_amount);
 
         // Add user to stakers array if they haven't staked already
         usersAddresses.push(msg.sender);
@@ -83,8 +86,8 @@ contract Bank is Ownable{
     // Unstaking Tokens (Withdraw)
     function unstakeTokens() public withdrawAllowed {
 
-        // Fetch staking balance
-        uint balance = users[msg.sender].stakingBalance;
+        uint balance = users[msg.sender].stakingBalance; // Fetch staking balance
+        uint currentPeriod = getCurrentPeriod();
 
         // Require amount greater than 0
         require(balance > 0, "staking balance connot be 0");
@@ -97,7 +100,7 @@ contract Bank is Ownable{
         users[msg.sender].isStaking = false;
         usersAddresses[getIndex(msg.sender)] = usersAddresses[usersAddresses.length - 1];
         usersAddresses.pop();
-        totalStaked[getCurrentPeriod()] -= balance;
+        totalStaked[currentPeriod] = totalStaked[currentPeriod].sub(balance);
     }
 
     // Calculate rewards 
@@ -126,8 +129,8 @@ contract Bank is Ownable{
         }
     }
 
-    function getIndex(address _sender) private  view returns (uint index){
-        for(uint i = 0; i<usersAddresses.length; i++){
+    function getIndex(address _sender) private  view returns (uint i){
+        for(i = 0; i<usersAddresses.length; i++){
             if(_sender == usersAddresses[i]) {
                 return i;
             }
@@ -135,17 +138,21 @@ contract Bank is Ownable{
     }
 
     function getCurrentPeriod() public view returns (uint period) {
-        if ((block.timestamp >= t0 + 1*timePeriod) && (block.timestamp < t0 + 2*timePeriod)) {
+        if ((block.timestamp >= t0) && (block.timestamp < t0 + 1*timePeriodMinutes)) {
             period = 1;
-        } else if ((block.timestamp >= t0 + 1*timePeriod) && (block.timestamp < t0 + 2*timePeriod)) {
+        } else if ((block.timestamp >= t0.add(1*timePeriodMinutes)) && (block.timestamp < t0.add(2*timePeriodMinutes))) {
             period = 2;
-        } else if ((block.timestamp >= t0 + 2*timePeriod) && (block.timestamp < t0 + 3*timePeriod)) {
+        } else if ((block.timestamp >= t0.add(2*timePeriodMinutes)) && (block.timestamp < t0.add(3*timePeriodMinutes))) {
             period = 3;
-        } else if ((block.timestamp >= t0 + 3*timePeriod) && (block.timestamp < t0 + 4*timePeriod)) {
+        } else if ((block.timestamp >= t0.add(3*timePeriodMinutes)) && (block.timestamp < t0.add(4*timePeriodMinutes))) {
             period = 4;
-        } else if ((block.timestamp >= t0 + 4*timePeriod)) {
+        } else if ((block.timestamp >= t0.add(4*timePeriodMinutes))) {
             period = 5;
         }
         return period;
+    }
+
+    function getCurrentBlockTimestamp() public view returns (uint) {
+        return block.timestamp;
     }
 }

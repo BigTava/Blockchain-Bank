@@ -8,10 +8,10 @@ module.exports = async function (deployer, network, accounts) {
     const token = await Token.deployed();
 
     // Deploy Bank
-    const timePeriod = 1;
+    const timePeriodMinutes = 1;
     const rewardPool = 1000;
 
-    await deployer.deploy(Bank, token.address, timePeriod, rewardPool);
+    await deployer.deploy(Bank, token.address, timePeriodMinutes, rewardPool);
     const bank = await Bank.deployed();
 
     await token.transfer(bank.address, rewardPool);
