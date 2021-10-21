@@ -24,7 +24,7 @@ contract Bank is Ownable{
         bool isStaking;
     }
 
-    mapping(address => user) users;
+    mapping(address => user) public users;
     mapping(uint => uint) totalStaked; // staking amount at each period
 
     event NewStaker(address stakerAddress, uint amount);
@@ -37,23 +37,23 @@ contract Bank is Ownable{
         rewardPool  = _rewardPool;
     }
 
-    modifier notStaking(address _userAddress) {
-        require(users[_userAddress].isStaking != true, 'Already staking');
+    modifier notStaking {
+        require(users[msg.sender].isStaking != true, 'Already staking');
         _;
     }
 
-    modifier depositAllowed() {
+    modifier depositAllowed {
         require(getCurrentPeriod() == 1, "It is only possible to deposit in the first period");
         _;
     }
 
-    modifier withdrawAllowed() {
+    modifier withdrawAllowed {
         require(getCurrentPeriod() > 2, "You cannot withdraw your tokens");
         _;
     }
 
     // Satking Tokens (Deposit)
-    function stakeTokens(uint _amount) public notStaking(msg.sender) depositAllowed {
+    function stakeTokens(uint _amount) public notStaking depositAllowed {
 
         // Require amount > 0
         require(_amount > 0, "minimal amount is 0");
@@ -78,6 +78,7 @@ contract Bank is Ownable{
 
         // Add user to stakers array if they haven't staked already
         usersAddresses.push(msg.sender);
+        users[msg.sender].isStaking = true;
 
         // Emit event
         emit NewStaker(msg.sender, _amount);
@@ -86,13 +87,14 @@ contract Bank is Ownable{
     // Unstaking Tokens (Withdraw)
     function unstakeTokens() public withdrawAllowed {
 
-        uint balance = users[msg.sender].stakingBalance; // Fetch staking balance
+        uint balance = users[msg.sender].stakingBalance;
         uint currentPeriod = getCurrentPeriod();
 
         // Require amount greater than 0
         require(balance > 0, "staking balance connot be 0");
 
         // Transfer balance + rewards
+        updateRewards();
         uint totalRewards = users[msg.sender].p1 + users[msg.sender].p2 + users[msg.sender].p3;
         token.transferFrom(address(this), msg.sender, balance + totalRewards);
 
