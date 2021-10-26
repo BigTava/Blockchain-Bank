@@ -10,22 +10,20 @@ contract Bank is Ownable{
     using SafeMath for uint256;
 
     Token public token;
-    address private _owner;
     uint public timePeriodMinutes;
     uint public t0;
     uint public rewardPool;
+    uint public rewardPoolLeft;
+    address private _owner;
     address[] public usersAddresses;
     
     struct user {
-        uint p1;
-        uint p2;
-        uint p3;
         uint stakingBalance;
         bool isStaking;
     }
 
     mapping(address => user) public users;
-    mapping(uint => uint) totalStaked; // staking amount at each period
+    mapping(uint => uint) public totalStaked; // staking amount at each period
 
     event NewStaker(address stakerAddress, uint amount);
 
@@ -47,23 +45,26 @@ contract Bank is Ownable{
         _;
     }
 
-    modifier withdrawAllowed {
-        require(getCurrentPeriod() > 2, "You cannot withdraw your tokens");
+    modifier userWithdrawAllowed {
+        require(getCurrentPeriod() >= 3, "You cannot withdraw your tokens");
+        _;
+    }
+
+    modifier bankWithdrawAllowed {
+        require(getCurrentPeriod() == 5, "Bank can only withdraw in period 5");
+        require(totalStaked[5] == 0, "Bank can only withdraw if no other user is staking");
         _;
     }
 
     // Satking Tokens (Deposit)
-    function stakeTokens(uint _amount) public notStaking depositAllowed {
+    function stakeTokens(uint _amount) external notStaking depositAllowed {
 
         // Require amount > 0
         require(_amount > 0, "minimal amount is 0");
-
+    
         // Create user and populate variable
         users[msg.sender] = user(
         {
-            p1: 0,
-            p2: 0,
-            p3: 0,
             stakingBalance : _amount,
             isStaking: true
         }
@@ -72,9 +73,9 @@ contract Bank is Ownable{
         // Transfer xyz to this contract for staking
         token.transferFrom(msg.sender, address(this), _amount);
     
-        // update staking balance
+        // update variables
         users[msg.sender].stakingBalance = _amount;
-        totalStaked[1] = totalStaked[1].add(_amount);
+        updateTotalStaked(1, _amount);
 
         // Add user to stakers array if they haven't staked already
         usersAddresses.push(msg.sender);
@@ -85,49 +86,90 @@ contract Bank is Ownable{
     }
 
     // Unstaking Tokens (Withdraw)
-    function unstakeTokens() public withdrawAllowed {
+    function unstakeTokens() external userWithdrawAllowed {
 
         uint balance = users[msg.sender].stakingBalance;
-        uint currentPeriod = getCurrentPeriod();
+        uint8 currentPeriod = getCurrentPeriod();
+        uint totalRewards;
 
         // Require amount greater than 0
         require(balance > 0, "staking balance connot be 0");
 
         // Transfer balance + rewards
-        updateRewards();
-        uint totalRewards = users[msg.sender].p1 + users[msg.sender].p2 + users[msg.sender].p3;
-        token.transferFrom(address(this), msg.sender, balance + totalRewards);
+        totalRewards = calculateRewards(currentPeriod);
+        token.transfer(msg.sender, balance + totalRewards);
 
         // Update variables
         users[msg.sender].isStaking = false;
+        users[msg.sender].stakingBalance = 0;
         usersAddresses[getIndex(msg.sender)] = usersAddresses[usersAddresses.length - 1];
         usersAddresses.pop();
-        totalStaked[currentPeriod] = totalStaked[currentPeriod].sub(balance);
+        updateTotalStaked(currentPeriod, balance);
+    }
+
+    // Bank Withdraw in period 5 
+    function bankWithdraw() external bankWithdrawAllowed onlyOwner{
+
+        uint amount;
+
+        // check in which period there
+        if (totalStaked[3] == 0) {
+            amount = rewardPool;
+        } else if (totalStaked[4] == 0) {
+            amount = 8*rewardPool/10;
+        } else if (totalStaked[5] == 0) {
+            amount = 5*rewardPool/10;
+        }
+
+        token.transfer(_owner, amount);
     }
 
     // Calculate rewards 
-    function updateRewards() public {
-        address userAddress;
+    function calculateRewards(uint8 period) view private returns (uint rewards) {
 
-        if (getCurrentPeriod() == 3) {
-            for(uint i = 0; i<usersAddresses.length; i++){
-                userAddress = usersAddresses[i];
-                users[userAddress].p1 = users[userAddress].stakingBalance/totalStaked[3]*2/10*rewardPool;
-            }
+        address userAddress = msg.sender;
+        uint stakingBalance = users[userAddress].stakingBalance;
+
+        if (period == 3) {
+
+            uint r1 = stakingBalance*2*rewardPool/totalStaked[3]/10;
+
+            rewards = r1;
+    
+        } else if (period == 4) {
+
+            uint r1 = stakingBalance*2*rewardPool/totalStaked[3]/10;
+            uint r2 = stakingBalance*3*rewardPool/totalStaked[4]/10;
+
+            rewards = r1 + r2;
+
+        } else if (period == 5) {
+
+            uint r1 = stakingBalance*2*rewardPool/totalStaked[3]/10;
+            uint r2 = stakingBalance*3*rewardPool/totalStaked[4]/10;
+            uint r3 = stakingBalance*5*rewardPool/totalStaked[5]/10;
+
+            rewards = r1 + r2 + r3;
+    
         }
 
-        if (getCurrentPeriod() == 4) {
-            for(uint i = 0; i<usersAddresses.length; i++){
-                userAddress = usersAddresses[i];
-                users[userAddress].p1 = users[userAddress].stakingBalance/totalStaked[4]*3/10*rewardPool;
-            }
-        }
+        return rewards;
+    }
+
+    function updateTotalStaked(uint8 period, uint amount) private {
         
-        if (getCurrentPeriod() == 5) {
-            for(uint i = 0; i<usersAddresses.length; i++){
-                userAddress = usersAddresses[i];
-                users[userAddress].p1 = users[userAddress].stakingBalance/totalStaked[5]*5/10*rewardPool;
-            }
+        if (period == 1) {
+            totalStaked[1] = totalStaked[1].add(amount);
+            totalStaked[3] = totalStaked[1];
+            totalStaked[4] = totalStaked[1];
+            totalStaked[5] = totalStaked[1];
+        }
+        if (getCurrentPeriod() == 3) {
+            totalStaked[4] = totalStaked[4].sub(amount);
+            totalStaked[5] = totalStaked[4];
+        }
+        if (getCurrentPeriod() == 4) {
+            totalStaked[5] = totalStaked[5].sub(amount);
         }
     }
 
@@ -139,7 +181,7 @@ contract Bank is Ownable{
         }
     }
 
-    function getCurrentPeriod() public view returns (uint period) {
+    function getCurrentPeriod() public view returns (uint8 period) {
         if ((block.timestamp >= t0) && (block.timestamp < t0 + 1*timePeriodMinutes)) {
             period = 1;
         } else if ((block.timestamp >= t0.add(1*timePeriodMinutes)) && (block.timestamp < t0.add(2*timePeriodMinutes))) {
