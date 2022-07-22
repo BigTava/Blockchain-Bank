@@ -1,3 +1,3 @@
-## Blockchain Bank Staking Pool DAPP
+## Blockchain bank staking pool dAPP
 
 Author: Tiago Tavares
